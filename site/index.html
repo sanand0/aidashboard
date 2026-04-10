@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Support Operations Health</title>
+  <style>
+    :root {
+      --bg: #0b1020;
+      --panel: #121933;
+      --panel-2: #182044;
+      --text: #ebefff;
+      --muted: #9aa6d1;
+      --good: #2cc38a;
+      --warn: #f0b34a;
+      --bad: #ff6b6b;
+      --line: #35406c;
+      --accent: #7aa2ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: linear-gradient(180deg, #0b1020 0%, #0d1430 100%);
+      color: var(--text);
+    }
+    .wrap { max-width: 1200px; margin: 0 auto; padding: 24px; }
+    h1, h2, h3, p { margin: 0; }
+    .subtle { color: var(--muted); }
+    .hero {
+      display: grid;
+      gap: 10px;
+      margin-bottom: 20px;
+      padding: 24px;
+      border: 1px solid var(--line);
+      background: rgba(18, 25, 51, 0.9);
+      border-radius: 20px;
+      box-shadow: 0 18px 40px rgba(0,0,0,0.25);
+    }
+    .hero-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .chip {
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(122, 162, 255, 0.12);
+      border: 1px solid rgba(122, 162, 255, 0.28);
+    }
+    .grid-4, .grid-2 {
+      display: grid;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .card {
+      background: rgba(18, 25, 51, 0.92);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 18px;
+      box-shadow: 0 12px 28px rgba(0,0,0,0.2);
+      min-width: 0;
+    }
+    .kpi-label { color: var(--muted); font-size: 13px; margin-bottom: 8px; }
+    .kpi-value { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; }
+    .delta { font-size: 13px; margin-top: 8px; }
+    .good { color: var(--good); }
+    .warn { color: var(--warn); }
+    .bad { color: var(--bad); }
+    .section-title { margin-bottom: 12px; font-size: 18px; }
+    .chart { height: 260px; width: 100%; }
+    .legend { display: flex; flex-wrap: wrap; gap: 12px; color: var(--muted); font-size: 13px; margin-top: 10px; }
+    .legend span::before {
+      content: "";
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      margin-right: 6px;
+      border-radius: 999px;
+      vertical-align: middle;
+      background: currentColor;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td {
+      text-align: left;
+      padding: 10px 8px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    th { color: var(--muted); font-weight: 600; }
+    .alerts, .hypotheses, .narrative { display: grid; gap: 12px; }
+    .item {
+      padding: 14px;
+      border-radius: 16px;
+      background: rgba(24, 32, 68, 0.9);
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+    .item strong { display: block; margin-bottom: 6px; }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      border-radius: 999px;
+      padding: 4px 8px;
+      margin-bottom: 8px;
+      border: 1px solid rgba(255,255,255,0.12);
+      color: var(--text);
+      background: rgba(255,255,255,0.06);
+    }
+    .footer { color: var(--muted); font-size: 13px; margin-top: 18px; }
+    .loading, .error { padding: 40px 20px; text-align: center; color: var(--muted); }
+    @media (max-width: 960px) {
+      .grid-4, .grid-2 { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap" id="app">
+    <div class="loading">Loading dashboard…</div>
+  </div>
+
+  <script>
+    const fmtInt = new Intl.NumberFormat('en-US');
+    const fmt1 = new Intl.NumberFormat('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    const fmt2 = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    function el(tag, className, html) {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (html !== undefined) node.innerHTML = html;
+      return node;
+    }
+
+    function statusClass(value, lowGood, highBad, reverse = false) {
+      if (!reverse) {
+        if (value <= lowGood) return 'good';
+        if (value >= highBad) return 'bad';
+        return 'warn';
+      }
+      if (value >= highBad) return 'good';
+      if (value <= lowGood) return 'bad';
+      return 'warn';
+    }
+
+    function lineChart(points, series, options = {}) {
+      const width = options.width || 900;
+      const height = options.height || 260;
+      const pad = { top: 12, right: 12, bottom: 28, left: 46 };
+      const xs = points.map((_, i) => i);
+      const allValues = series.flatMap(s => points.map(p => p[s.key]));
+      const min = Math.min(...allValues);
+      const max = Math.max(...allValues);
+      const safeSpan = (max - min) || 1;
+      const innerW = width - pad.left - pad.right;
+      const innerH = height - pad.top - pad.bottom;
+      const x = i => pad.left + (i / Math.max(xs.length - 1, 1)) * innerW;
+      const y = v => pad.top + (1 - ((v - min) / safeSpan)) * innerH;
+
+      const lines = [];
+      for (let i = 0; i < 4; i++) {
+        const val = min + (safeSpan * i / 3);
+        const yy = y(val);
+        lines.push(`<line x1="${pad.left}" y1="${yy}" x2="${width - pad.right}" y2="${yy}" stroke="rgba(255,255,255,0.08)" />`);
+        lines.push(`<text x="8" y="${yy + 4}" fill="#9aa6d1" font-size="12">${fmt1.format(val)}</text>`);
+      }
+
+      const paths = series.map(s => {
+        const d = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${x(i).toFixed(1)} ${y(p[s.key]).toFixed(1)}`).join(' ');
+        return `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" />`;
+      }).join('');
+
+      const labels = [0, Math.floor(points.length / 2), points.length - 1].filter((v, i, a) => a.indexOf(v) === i).map(i => {
+        const label = points[i].date;
+        return `<text x="${x(i)}" y="${height - 8}" text-anchor="middle" fill="#9aa6d1" font-size="12">${label}</text>`;
+      }).join('');
+
+      return `
+        <svg viewBox="0 0 ${width} ${height}" class="chart" preserveAspectRatio="none" role="img" aria-label="Trend chart">
+          ${lines.join('')}
+          ${paths}
+          ${labels}
+        </svg>`;
+    }
+
+    function barChart(rows, key, color) {
+      const width = 900;
+      const height = 240;
+      const pad = { top: 16, right: 12, bottom: 44, left: 40 };
+      const max = Math.max(...rows.map(r => r[key])) || 1;
+      const innerW = width - pad.left - pad.right;
+      const innerH = height - pad.top - pad.bottom;
+      const barW = innerW / rows.length * 0.6;
+      const gap = innerW / rows.length * 0.4;
+      return `
+        <svg viewBox="0 0 ${width} ${height}" class="chart" preserveAspectRatio="none" role="img" aria-label="Bar chart">
+          ${rows.map((row, i) => {
+            const x = pad.left + i * (barW + gap) + gap / 2;
+            const h = (row[key] / max) * innerH;
+            const y = pad.top + innerH - h;
+            return `
+              <rect x="${x}" y="${y}" width="${barW}" height="${h}" fill="${color}" rx="8" />
+              <text x="${x + barW / 2}" y="${height - 18}" text-anchor="middle" fill="#9aa6d1" font-size="12">${row.channel || row.region}</text>
+              <text x="${x + barW / 2}" y="${y - 6}" text-anchor="middle" fill="#ebefff" font-size="12">${fmt1.format(row[key])}</text>
+            `;
+          }).join('')}
+        </svg>`;
+    }
+
+    function buildKpiCard(label, value, sub, klass = '') {
+      const card = el('div', 'card');
+      card.innerHTML = `
+        <div class="kpi-label">${label}</div>
+        <div class="kpi-value ${klass}">${value}</div>
+        <div class="delta ${klass}">${sub}</div>
+      `;
+      return card;
+    }
+
+    function render(data) {
+      const app = document.getElementById('app');
+      app.innerHTML = '';
+
+      const hero = el('section', 'hero');
+      hero.innerHTML = `
+        <h1>${data.metadata.title}</h1>
+        <p class="subtle">Synthetic ${data.metadata.domain} dashboard. The data is randomized per deploy but intentionally shaped to test operational hypotheses.</p>
+        <div class="hero-meta">
+          <span class="chip">Seed ${data.metadata.seed}</span>
+          <span class="chip">${data.metadata.start_date} → ${data.metadata.end_date}</span>
+          <span class="chip">${data.metadata.days} days</span>
+          <span class="chip">Generated ${data.metadata.generated_on}</span>
+        </div>
+      `;
+      app.appendChild(hero);
+
+      const kpis = el('section', 'grid-4');
+      const deltaClass = data.kpis.created_change_last_30d_pct > 5 ? 'warn' : 'good';
+      kpis.appendChild(buildKpiCard('Tickets created', fmtInt.format(data.kpis.tickets_created), `${fmt1.format(data.kpis.created_change_last_30d_pct)}% vs previous 30 days`, deltaClass));
+      kpis.appendChild(buildKpiCard('Open backlog', fmtInt.format(data.kpis.open_backlog), 'Lower is better', statusClass(data.kpis.open_backlog, 350, 520)));
+      kpis.appendChild(buildKpiCard('First response', `${fmt1.format(data.kpis.first_response_hours)} hrs`, 'Weighted average', statusClass(data.kpis.first_response_hours, 3.5, 6.5)));
+      kpis.appendChild(buildKpiCard('CSAT / SLA breach', `${fmt1.format(data.kpis.csat)} / ${fmt1.format(data.kpis.sla_breach_rate)}%`, 'Higher CSAT, lower breach', statusClass(data.kpis.csat, 82, 89, true)));
+      app.appendChild(kpis);
+
+      const trendSection = el('section', 'grid-2');
+      const trendCard = el('div', 'card');
+      const recent = data.daily.slice(-45);
+      trendCard.innerHTML = `
+        <h2 class="section-title">Backlog and service quality trend</h2>
+        ${lineChart(recent, [
+          { key: 'backlog_end', color: '#7aa2ff' },
+          { key: 'sla_breach_rate', color: '#ff8f6b' }
+        ])}
+        <div class="legend">
+          <span style="color:#7aa2ff">Backlog</span>
+          <span style="color:#ff8f6b">SLA breach %</span>
+        </div>
+      `;
+
+      const responseCard = el('div', 'card');
+      responseCard.innerHTML = `
+        <h2 class="section-title">Volume and response time trend</h2>
+        ${lineChart(recent, [
+          { key: 'tickets_created', color: '#2cc38a' },
+          { key: 'first_response_hours', color: '#f0b34a' }
+        ])}
+        <div class="legend">
+          <span style="color:#2cc38a">Tickets created</span>
+          <span style="color:#f0b34a">First response hours</span>
+        </div>
+      `;
+      trendSection.appendChild(trendCard);
+      trendSection.appendChild(responseCard);
+      app.appendChild(trendSection);
+
+      const compareSection = el('section', 'grid-2');
+      const channelCard = el('div', 'card');
+      channelCard.innerHTML = `
+        <h2 class="section-title">Channel comparison</h2>
+        ${barChart(data.channel_stats, 'first_response_hours', '#7aa2ff')}
+        <table>
+          <thead><tr><th>Channel</th><th>Share</th><th>Response hrs</th><th>SLA breach %</th><th>CSAT</th></tr></thead>
+          <tbody>
+            ${data.channel_stats.map(row => `
+              <tr>
+                <td>${row.channel}</td>
+                <td>${fmt1.format(row.ticket_share)}%</td>
+                <td>${fmt1.format(row.first_response_hours)}</td>
+                <td>${fmt1.format(row.sla_breach_rate)}</td>
+                <td>${fmt1.format(row.csat)}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      `;
+
+      const regionCard = el('div', 'card');
+      regionCard.innerHTML = `
+        <h2 class="section-title">Region comparison</h2>
+        ${barChart(data.region_stats, 'avg_backlog_end', '#ff8f6b')}
+        <table>
+          <thead><tr><th>Region</th><th>Avg backlog</th><th>Response hrs</th><th>SLA breach %</th><th>CSAT</th></tr></thead>
+          <tbody>
+            ${data.region_stats.map(row => `
+              <tr>
+                <td>${row.region}</td>
+                <td>${fmt1.format(row.avg_backlog_end)}</td>
+                <td>${fmt1.format(row.first_response_hours)}</td>
+                <td>${fmt1.format(row.sla_breach_rate)}</td>
+                <td>${fmt1.format(row.csat)}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      `;
+      compareSection.appendChild(channelCard);
+      compareSection.appendChild(regionCard);
+      app.appendChild(compareSection);
+
+      const insights = el('section', 'grid-2');
+      const hypotheses = el('div', 'card');
+      hypotheses.innerHTML = `<h2 class="section-title">Hypothesis checks</h2>`;
+      const hypothesisWrap = el('div', 'hypotheses');
+      data.hypotheses.forEach(item => {
+        const klass = item.status === 'supported' ? 'good' : 'warn';
+        const box = el('div', 'item');
+        box.innerHTML = `
+          <div class="badge ${klass}">${item.status}</div>
+          <strong>${item.title}</strong>
+          <div class="subtle">${item.evidence}</div>
+        `;
+        hypothesisWrap.appendChild(box);
+      });
+      hypotheses.appendChild(hypothesisWrap);
+
+      const alerts = el('div', 'card');
+      alerts.innerHTML = `<h2 class="section-title">Alerts and narrative</h2>`;
+      const alertsWrap = el('div', 'alerts');
+      if (!data.alerts.length) {
+        alertsWrap.appendChild(el('div', 'item', '<strong>No active alerts</strong><div class="subtle">The latest data point is within normal bounds.</div>'));
+      } else {
+        data.alerts.forEach(item => {
+          const klass = item.severity === 'high' ? 'bad' : item.severity === 'medium' ? 'warn' : 'good';
+          const box = el('div', 'item');
+          box.innerHTML = `
+            <div class="badge ${klass}">${item.severity}</div>
+            <strong>${item.title}</strong>
+            <div class="subtle">${item.detail}</div>
+          `;
+          alertsWrap.appendChild(box);
+        });
+      }
+      data.narrative.forEach(text => {
+        alertsWrap.appendChild(el('div', 'item', `<strong>Interpretation</strong><div class="subtle">${text}</div>`));
+      });
+      alerts.appendChild(alertsWrap);
+
+      insights.appendChild(hypotheses);
+      insights.appendChild(alerts);
+      app.appendChild(insights);
+
+      const footer = el('div', 'footer', data.metadata.notes.map(note => `• ${note}`).join('<br>'));
+      app.appendChild(footer);
+    }
+
+    fetch('./data/dashboard.json', { cache: 'no-store' })
+      .then(response => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+      })
+      .then(render)
+      .catch(error => {
+        document.getElementById('app').innerHTML = `<div class="error"><h1>Dashboard failed to load</h1><p>${error.message}</p><p class="subtle">Make sure <code>site/data/dashboard.json</code> exists and is served over HTTP.</p></div>`;
+      });
+  </script>
+</body>
+</html>

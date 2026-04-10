@@ -1,0 +1,45 @@
+name: Copilot Bug Fix
+description: Small, well-scoped bug or enhancement for Copilot cloud agent
+title: "[bug]: "
+labels:
+  - bug
+assignees:
+  - "@copilot"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Keep this issue narrow. Good tasks have a clear defect, expected behavior, and validation steps.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is broken?
+      description: Describe the observed problem and where it occurs.
+      placeholder: The dashboard crashes when dashboard.json contains an empty alerts array.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should happen instead?
+      placeholder: The dashboard should render normally and show 'No alerts'.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction / verification steps
+      description: Add exact files, commands, URLs, screenshots, or test commands.
+      placeholder: |
+        1. Run `python scripts/generate_data.py --seed 42`
+        2. Start `python -m http.server 8000`
+        3. Open `/site/`
+        4. Observe the error in the browser console
+    validations:
+      required: true
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Constraints
+      description: Mention files to avoid, style requirements, and non-goals.
+      placeholder: Keep the dashboard dependency-free. Do not add a framework.
