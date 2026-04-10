@@ -14,6 +14,12 @@ class DashboardPageTests(unittest.TestCase):
         ]:
             self.assertIn(snippet, html)
 
+    def test_index_has_moving_average(self):
+        html = Path('site/index.html').read_text(encoding='utf-8')
+        self.assertIn('movingAverage', html)
+        self.assertIn('_ma7', html)
+        self.assertIn('7-day avg', html)
+
 
 if __name__ == '__main__':
     unittest.main()
