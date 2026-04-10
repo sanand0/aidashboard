@@ -136,9 +136,9 @@
 </head>
 <body>
   <div class="lang-bar" id="lang-bar">
-    <button class="lang-btn active" data-lang="en">EN</button>
-    <button class="lang-btn" data-lang="fr">FR</button>
-    <button class="lang-btn" data-lang="zh">中文</button>
+    <button class="lang-btn active" data-lang="en" aria-label="Switch to English">EN</button>
+    <button class="lang-btn" data-lang="fr" aria-label="Passer en français">FR</button>
+    <button class="lang-btn" data-lang="zh" aria-label="切换到中文">中文</button>
   </div>
   <div class="wrap" id="app">
     <div class="loading">Loading dashboard…</div>
@@ -178,6 +178,7 @@
         seed: 'Seed',
         days: 'days',
         generated: 'Generated',
+        hrs: 'hrs',
       },
       fr: {
         syntheticDesc: 'Tableau de bord {domain} synthétique. Les données sont générées aléatoirement par déploiement mais intentionnellement conçues pour tester des hypothèses opérationnelles.',
@@ -211,6 +212,7 @@
         seed: 'Graine',
         days: 'jours',
         generated: 'Généré le',
+        hrs: 'h',
       },
       zh: {
         syntheticDesc: '{domain}合成仪表板。数据每次部署随机生成，但经过特意设计以测试运营假设。',
@@ -244,6 +246,7 @@
         seed: '种子',
         days: '天',
         generated: '生成于',
+        hrs: '小时',
       },
     };
 
@@ -369,7 +372,7 @@
       const deltaClass = data.kpis.created_change_last_30d_pct > 5 ? 'warn' : 'good';
       kpis.appendChild(buildKpiCard(t.ticketsCreated, fmtInt.format(data.kpis.tickets_created), `${fmt1.format(data.kpis.created_change_last_30d_pct)}% ${t.vsPrev30}`, deltaClass));
       kpis.appendChild(buildKpiCard(t.openBacklog, fmtInt.format(data.kpis.open_backlog), t.lowerIsBetter, statusClass(data.kpis.open_backlog, 350, 520)));
-      kpis.appendChild(buildKpiCard(t.firstResponse, `${fmt1.format(data.kpis.first_response_hours)} hrs`, t.weightedAvg, statusClass(data.kpis.first_response_hours, 3.5, 6.5)));
+      kpis.appendChild(buildKpiCard(t.firstResponse, `${fmt1.format(data.kpis.first_response_hours)} ${t.hrs}`, t.weightedAvg, statusClass(data.kpis.first_response_hours, 3.5, 6.5)));
       kpis.appendChild(buildKpiCard(t.csatSla, `${fmt1.format(data.kpis.csat)} / ${fmt1.format(data.kpis.sla_breach_rate)}%`, t.higherCsatLower, statusClass(data.kpis.csat, 82, 89, true)));
       app.appendChild(kpis);
 
