@@ -113,17 +113,143 @@
     }
     .footer { color: var(--muted); font-size: 13px; margin-top: 18px; }
     .loading, .error { padding: 40px 20px; text-align: center; color: var(--muted); }
+    .lang-bar { position: fixed; top: 16px; right: 24px; display: flex; gap: 6px; z-index: 100; }
+    .lang-btn {
+      background: rgba(18, 25, 51, 0.92);
+      border: 1px solid var(--line);
+      color: var(--muted);
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 13px;
+      font-family: inherit;
+      cursor: pointer;
+    }
+    .lang-btn.active, .lang-btn:hover {
+      background: rgba(122, 162, 255, 0.15);
+      border-color: var(--accent);
+      color: var(--text);
+    }
     @media (max-width: 960px) {
       .grid-4, .grid-2 { grid-template-columns: 1fr; }
     }
   </style>
 </head>
 <body>
+  <div class="lang-bar" id="lang-bar">
+    <button class="lang-btn active" data-lang="en">EN</button>
+    <button class="lang-btn" data-lang="fr">FR</button>
+    <button class="lang-btn" data-lang="zh">中文</button>
+  </div>
   <div class="wrap" id="app">
     <div class="loading">Loading dashboard…</div>
   </div>
 
   <script>
+    const TRANSLATIONS = {
+      en: {
+        syntheticDesc: 'Synthetic {domain} dashboard. The data is randomized per deploy but intentionally shaped to test operational hypotheses.',
+        ticketsCreated: 'Tickets created',
+        vsPrev30: 'vs previous 30 days',
+        openBacklog: 'Open backlog',
+        lowerIsBetter: 'Lower is better',
+        firstResponse: 'First response',
+        weightedAvg: 'Weighted average',
+        csatSla: 'CSAT / SLA breach',
+        higherCsatLower: 'Higher CSAT, lower breach',
+        backlogQualityTrend: 'Backlog and service quality trend',
+        volumeResponseTrend: 'Volume and response time trend',
+        backlog: 'Backlog',
+        slaBreach: 'SLA breach %',
+        firstResponseHours: 'First response hours',
+        channelComparison: 'Channel comparison',
+        regionComparison: 'Region comparison',
+        thChannel: 'Channel',
+        thShare: 'Share',
+        thResponseHrs: 'Response hrs',
+        thSlaBreach: 'SLA breach %',
+        thCsat: 'CSAT',
+        thRegion: 'Region',
+        thAvgBacklog: 'Avg backlog',
+        hypothesisChecks: 'Hypothesis checks',
+        alertsNarrative: 'Alerts and narrative',
+        noActiveAlerts: 'No active alerts',
+        noAlertsDetail: 'The latest data point is within normal bounds.',
+        interpretation: 'Interpretation',
+        seed: 'Seed',
+        days: 'days',
+        generated: 'Generated',
+      },
+      fr: {
+        syntheticDesc: 'Tableau de bord {domain} synthétique. Les données sont générées aléatoirement par déploiement mais intentionnellement conçues pour tester des hypothèses opérationnelles.',
+        ticketsCreated: 'Tickets créés',
+        vsPrev30: 'vs 30 jours précédents',
+        openBacklog: 'Backlog ouvert',
+        lowerIsBetter: 'Plus bas est mieux',
+        firstResponse: 'Première réponse',
+        weightedAvg: 'Moyenne pondérée',
+        csatSla: 'CSAT / Violation SLA',
+        higherCsatLower: 'CSAT plus élevé, violation inférieure',
+        backlogQualityTrend: 'Tendance backlog et qualité de service',
+        volumeResponseTrend: 'Tendance volume et temps de réponse',
+        backlog: 'Backlog',
+        slaBreach: 'Violation SLA %',
+        firstResponseHours: 'Heures de première réponse',
+        channelComparison: 'Comparaison par canal',
+        regionComparison: 'Comparaison par région',
+        thChannel: 'Canal',
+        thShare: 'Part',
+        thResponseHrs: 'Réponse (h)',
+        thSlaBreach: 'Violation SLA %',
+        thCsat: 'CSAT',
+        thRegion: 'Région',
+        thAvgBacklog: 'Backlog moyen',
+        hypothesisChecks: "Vérifications d'hypothèses",
+        alertsNarrative: 'Alertes et récit',
+        noActiveAlerts: 'Aucune alerte active',
+        noAlertsDetail: 'Le dernier point de données est dans les limites normales.',
+        interpretation: 'Interprétation',
+        seed: 'Graine',
+        days: 'jours',
+        generated: 'Généré le',
+      },
+      zh: {
+        syntheticDesc: '{domain}合成仪表板。数据每次部署随机生成，但经过特意设计以测试运营假设。',
+        ticketsCreated: '创建的工单',
+        vsPrev30: '对比前30天',
+        openBacklog: '未完成积压',
+        lowerIsBetter: '越低越好',
+        firstResponse: '首次响应',
+        weightedAvg: '加权平均',
+        csatSla: 'CSAT / SLA违约',
+        higherCsatLower: '更高CSAT，更低违约',
+        backlogQualityTrend: '积压与服务质量趋势',
+        volumeResponseTrend: '工单量与响应时间趋势',
+        backlog: '积压',
+        slaBreach: 'SLA违约率 %',
+        firstResponseHours: '首次响应时长',
+        channelComparison: '渠道对比',
+        regionComparison: '地区对比',
+        thChannel: '渠道',
+        thShare: '占比',
+        thResponseHrs: '响应时长',
+        thSlaBreach: 'SLA违约率 %',
+        thCsat: 'CSAT',
+        thRegion: '地区',
+        thAvgBacklog: '平均积压',
+        hypothesisChecks: '假设验证',
+        alertsNarrative: '警报与叙述',
+        noActiveAlerts: '无活跃警报',
+        noAlertsDetail: '最新数据点在正常范围内。',
+        interpretation: '解读',
+        seed: '种子',
+        days: '天',
+        generated: '生成于',
+      },
+    };
+
+    let currentLang = 'en';
+    let dashboardData = null;
+
     const fmtInt = new Intl.NumberFormat('en-US');
     const fmt1 = new Intl.NumberFormat('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
     const fmt2 = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -221,55 +347,57 @@
     }
 
     function render(data) {
+      dashboardData = data;
+      const t = TRANSLATIONS[currentLang];
       const app = document.getElementById('app');
       app.innerHTML = '';
 
       const hero = el('section', 'hero');
       hero.innerHTML = `
         <h1>${data.metadata.title}</h1>
-        <p class="subtle">Synthetic ${data.metadata.domain} dashboard. The data is randomized per deploy but intentionally shaped to test operational hypotheses.</p>
+        <p class="subtle">${t.syntheticDesc.replace('{domain}', data.metadata.domain)}</p>
         <div class="hero-meta">
-          <span class="chip">Seed ${data.metadata.seed}</span>
+          <span class="chip">${t.seed} ${data.metadata.seed}</span>
           <span class="chip">${data.metadata.start_date} → ${data.metadata.end_date}</span>
-          <span class="chip">${data.metadata.days} days</span>
-          <span class="chip">Generated ${data.metadata.generated_on}</span>
+          <span class="chip">${data.metadata.days} ${t.days}</span>
+          <span class="chip">${t.generated} ${data.metadata.generated_on}</span>
         </div>
       `;
       app.appendChild(hero);
 
       const kpis = el('section', 'grid-4');
       const deltaClass = data.kpis.created_change_last_30d_pct > 5 ? 'warn' : 'good';
-      kpis.appendChild(buildKpiCard('Tickets created', fmtInt.format(data.kpis.tickets_created), `${fmt1.format(data.kpis.created_change_last_30d_pct)}% vs previous 30 days`, deltaClass));
-      kpis.appendChild(buildKpiCard('Open backlog', fmtInt.format(data.kpis.open_backlog), 'Lower is better', statusClass(data.kpis.open_backlog, 350, 520)));
-      kpis.appendChild(buildKpiCard('First response', `${fmt1.format(data.kpis.first_response_hours)} hrs`, 'Weighted average', statusClass(data.kpis.first_response_hours, 3.5, 6.5)));
-      kpis.appendChild(buildKpiCard('CSAT / SLA breach', `${fmt1.format(data.kpis.csat)} / ${fmt1.format(data.kpis.sla_breach_rate)}%`, 'Higher CSAT, lower breach', statusClass(data.kpis.csat, 82, 89, true)));
+      kpis.appendChild(buildKpiCard(t.ticketsCreated, fmtInt.format(data.kpis.tickets_created), `${fmt1.format(data.kpis.created_change_last_30d_pct)}% ${t.vsPrev30}`, deltaClass));
+      kpis.appendChild(buildKpiCard(t.openBacklog, fmtInt.format(data.kpis.open_backlog), t.lowerIsBetter, statusClass(data.kpis.open_backlog, 350, 520)));
+      kpis.appendChild(buildKpiCard(t.firstResponse, `${fmt1.format(data.kpis.first_response_hours)} hrs`, t.weightedAvg, statusClass(data.kpis.first_response_hours, 3.5, 6.5)));
+      kpis.appendChild(buildKpiCard(t.csatSla, `${fmt1.format(data.kpis.csat)} / ${fmt1.format(data.kpis.sla_breach_rate)}%`, t.higherCsatLower, statusClass(data.kpis.csat, 82, 89, true)));
       app.appendChild(kpis);
 
       const trendSection = el('section', 'grid-2');
       const trendCard = el('div', 'card');
       const recent = data.daily.slice(-45);
       trendCard.innerHTML = `
-        <h2 class="section-title">Backlog and service quality trend</h2>
+        <h2 class="section-title">${t.backlogQualityTrend}</h2>
         ${lineChart(recent, [
           { key: 'backlog_end', color: '#7aa2ff' },
           { key: 'sla_breach_rate', color: '#ff8f6b' }
         ])}
         <div class="legend">
-          <span style="color:#7aa2ff">Backlog</span>
-          <span style="color:#ff8f6b">SLA breach %</span>
+          <span style="color:#7aa2ff">${t.backlog}</span>
+          <span style="color:#ff8f6b">${t.slaBreach}</span>
         </div>
       `;
 
       const responseCard = el('div', 'card');
       responseCard.innerHTML = `
-        <h2 class="section-title">Volume and response time trend</h2>
+        <h2 class="section-title">${t.volumeResponseTrend}</h2>
         ${lineChart(recent, [
           { key: 'tickets_created', color: '#2cc38a' },
           { key: 'first_response_hours', color: '#f0b34a' }
         ])}
         <div class="legend">
-          <span style="color:#2cc38a">Tickets created</span>
-          <span style="color:#f0b34a">First response hours</span>
+          <span style="color:#2cc38a">${t.ticketsCreated}</span>
+          <span style="color:#f0b34a">${t.firstResponseHours}</span>
         </div>
       `;
       trendSection.appendChild(trendCard);
@@ -279,10 +407,10 @@
       const compareSection = el('section', 'grid-2');
       const channelCard = el('div', 'card');
       channelCard.innerHTML = `
-        <h2 class="section-title">Channel comparison</h2>
+        <h2 class="section-title">${t.channelComparison}</h2>
         ${barChart(data.channel_stats, 'first_response_hours', '#7aa2ff')}
         <table>
-          <thead><tr><th>Channel</th><th>Share</th><th>Response hrs</th><th>SLA breach %</th><th>CSAT</th></tr></thead>
+          <thead><tr><th>${t.thChannel}</th><th>${t.thShare}</th><th>${t.thResponseHrs}</th><th>${t.thSlaBreach}</th><th>${t.thCsat}</th></tr></thead>
           <tbody>
             ${data.channel_stats.map(row => `
               <tr>
@@ -298,10 +426,10 @@
 
       const regionCard = el('div', 'card');
       regionCard.innerHTML = `
-        <h2 class="section-title">Region comparison</h2>
+        <h2 class="section-title">${t.regionComparison}</h2>
         ${barChart(data.region_stats, 'avg_backlog_end', '#ff8f6b')}
         <table>
-          <thead><tr><th>Region</th><th>Avg backlog</th><th>Response hrs</th><th>SLA breach %</th><th>CSAT</th></tr></thead>
+          <thead><tr><th>${t.thRegion}</th><th>${t.thAvgBacklog}</th><th>${t.thResponseHrs}</th><th>${t.thSlaBreach}</th><th>${t.thCsat}</th></tr></thead>
           <tbody>
             ${data.region_stats.map(row => `
               <tr>
@@ -320,7 +448,7 @@
 
       const insights = el('section', 'grid-2');
       const hypotheses = el('div', 'card');
-      hypotheses.innerHTML = `<h2 class="section-title">Hypothesis checks</h2>`;
+      hypotheses.innerHTML = `<h2 class="section-title">${t.hypothesisChecks}</h2>`;
       const hypothesisWrap = el('div', 'hypotheses');
       data.hypotheses.forEach(item => {
         const klass = item.status === 'supported' ? 'good' : 'warn';
@@ -335,10 +463,10 @@
       hypotheses.appendChild(hypothesisWrap);
 
       const alerts = el('div', 'card');
-      alerts.innerHTML = `<h2 class="section-title">Alerts and narrative</h2>`;
+      alerts.innerHTML = `<h2 class="section-title">${t.alertsNarrative}</h2>`;
       const alertsWrap = el('div', 'alerts');
       if (!data.alerts.length) {
-        alertsWrap.appendChild(el('div', 'item', '<strong>No active alerts</strong><div class="subtle">The latest data point is within normal bounds.</div>'));
+        alertsWrap.appendChild(el('div', 'item', `<strong>${t.noActiveAlerts}</strong><div class="subtle">${t.noAlertsDetail}</div>`));
       } else {
         data.alerts.forEach(item => {
           const klass = item.severity === 'high' ? 'bad' : item.severity === 'medium' ? 'warn' : 'good';
@@ -352,7 +480,7 @@
         });
       }
       data.narrative.forEach(text => {
-        alertsWrap.appendChild(el('div', 'item', `<strong>Interpretation</strong><div class="subtle">${text}</div>`));
+        alertsWrap.appendChild(el('div', 'item', `<strong>${t.interpretation}</strong><div class="subtle">${text}</div>`));
       });
       alerts.appendChild(alertsWrap);
 
@@ -363,6 +491,14 @@
       const footer = el('div', 'footer', data.metadata.notes.map(note => `• ${note}`).join('<br>'));
       app.appendChild(footer);
     }
+
+    document.getElementById('lang-bar').addEventListener('click', e => {
+      const btn = e.target.closest('[data-lang]');
+      if (!btn) return;
+      currentLang = btn.dataset.lang;
+      document.querySelectorAll('.lang-btn').forEach(b => b.classList.toggle('active', b === btn));
+      if (dashboardData) render(dashboardData);
+    });
 
     fetch('./data/dashboard.json', { cache: 'no-store' })
       .then(response => {
