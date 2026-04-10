@@ -170,7 +170,9 @@
 
       const paths = series.map(s => {
         const d = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${x(i).toFixed(1)} ${y(p[s.key]).toFixed(1)}`).join(' ');
-        return `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" />`;
+        const dash = s.dash ? ` stroke-dasharray="${s.dash}"` : '';
+        const opacity = s.opacity != null ? ` opacity="${s.opacity}"` : '';
+        return `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="${s.width || 2.5}" stroke-linejoin="round" stroke-linecap="round"${dash}${opacity} />`;
       }).join('');
 
       const labels = [0, Math.floor(points.length / 2), points.length - 1].filter((v, i, a) => a.indexOf(v) === i).map(i => {
@@ -208,6 +210,15 @@
             `;
           }).join('')}
         </svg>`;
+    }
+
+    function movingAverage(points, key, window) {
+      return points.map((p, i) => {
+        const start = Math.max(0, i - window + 1);
+        const slice = points.slice(start, i + 1);
+        const avg = slice.reduce((sum, d) => sum + (d[key] || 0), 0) / slice.length;
+        return Object.assign({}, p, { [key + '_ma' + window]: avg });
+      });
     }
 
     function buildKpiCard(label, value, sub, klass = '') {
@@ -248,15 +259,20 @@
       const trendSection = el('section', 'grid-2');
       const trendCard = el('div', 'card');
       const recent = data.daily.slice(-45);
+      const recentWith7DayMA = movingAverage(movingAverage(recent, 'backlog_end', 7), 'sla_breach_rate', 7);
       trendCard.innerHTML = `
         <h2 class="section-title">Backlog and service quality trend</h2>
-        ${lineChart(recent, [
-          { key: 'backlog_end', color: '#7aa2ff' },
-          { key: 'sla_breach_rate', color: '#ff8f6b' }
+        ${lineChart(recentWith7DayMA, [
+          { key: 'backlog_end', color: '#7aa2ff', width: 1.5, opacity: 0.45 },
+          { key: 'sla_breach_rate', color: '#ff8f6b', width: 1.5, opacity: 0.45 },
+          { key: 'backlog_end_ma7', color: '#7aa2ff', width: 2.5, dash: '8 4' },
+          { key: 'sla_breach_rate_ma7', color: '#ff8f6b', width: 2.5, dash: '8 4' }
         ])}
         <div class="legend">
-          <span style="color:#7aa2ff">Backlog</span>
-          <span style="color:#ff8f6b">SLA breach %</span>
+          <span style="color:#7aa2ff">Backlog (raw)</span>
+          <span style="color:#ff8f6b">SLA breach % (raw)</span>
+          <span style="color:#7aa2ff">Backlog 7-day avg</span>
+          <span style="color:#ff8f6b">SLA breach 7-day avg</span>
         </div>
       `;
 
