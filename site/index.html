@@ -221,6 +221,78 @@
       });
     }
 
+    // Control chart SVG — draws an I-chart or MR-chart with centre line and UCL/LCL.
+    // Out-of-control points (outOfControlKey === true) are highlighted in red.
+    function controlChart(points, valueKey, outOfControlKey, cl, ucl, lcl, color, ariaLabel) {
+      const width = 900;
+      const height = 240;
+      const pad = { top: 16, right: 54, bottom: 28, left: 46 };
+
+      const vals = points.map(p => p[valueKey]).filter(v => v != null);
+      const refVals = [cl, ucl, lcl != null ? lcl : null].filter(v => v != null);
+      const allVals = [...vals, ...refVals];
+      const vMin = Math.min(...allVals);
+      const vMax = Math.max(...allVals);
+      const span = (vMax - vMin) || 1;
+      const padFrac = 0.08;
+      const lo = vMin - span * padFrac;
+      const hi = vMax + span * padFrac;
+      const safeSpan = hi - lo;
+
+      const innerW = width - pad.left - pad.right;
+      const innerH = height - pad.top - pad.bottom;
+      const validPts = points.filter(p => p[valueKey] != null);
+      const n = validPts.length;
+      const xAt = i => pad.left + (i / Math.max(n - 1, 1)) * innerW;
+      const yAt = v => pad.top + (1 - ((v - lo) / safeSpan)) * innerH;
+
+      // Grid lines + Y labels
+      const grid = [];
+      for (let i = 0; i < 4; i++) {
+        const val = lo + (safeSpan * i / 3);
+        const yy = yAt(val).toFixed(1);
+        grid.push(`<line x1="${pad.left}" y1="${yy}" x2="${width - pad.right}" y2="${yy}" stroke="rgba(255,255,255,0.07)" />`);
+        grid.push(`<text x="4" y="${parseFloat(yy) + 4}" fill="#9aa6d1" font-size="11">${fmt1.format(val)}</text>`);
+      }
+
+      // Reference lines: UCL, LCL, CL
+      const refLines = [];
+      const ref = (v, label, stroke) => {
+        if (v == null) return;
+        const yy = yAt(v).toFixed(1);
+        refLines.push(`<line x1="${pad.left}" y1="${yy}" x2="${width - pad.right}" y2="${yy}" stroke="${stroke}" stroke-width="1.5" stroke-dasharray="6 3" />`);
+        refLines.push(`<text x="${width - pad.right + 4}" y="${parseFloat(yy) + 4}" fill="${stroke}" font-size="11" font-weight="600">${label}</text>`);
+      };
+      ref(ucl, 'UCL', '#ff6b6b');
+      if (lcl != null && lcl > lo + safeSpan * 0.02) ref(lcl, 'LCL', '#ff6b6b');
+      ref(cl, 'CL', '#2cc38a');
+
+      // Data line
+      const d = validPts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xAt(i).toFixed(1)} ${yAt(p[valueKey]).toFixed(1)}`).join(' ');
+      const dataLine = `<path d="${d}" fill="none" stroke="${color}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" />`;
+
+      // Points — highlight out-of-control in red
+      const dots = validPts.map((p, i) => {
+        const cx = xAt(i).toFixed(1);
+        const cy = yAt(p[valueKey]).toFixed(1);
+        return p[outOfControlKey]
+          ? `<circle cx="${cx}" cy="${cy}" r="5" fill="#ff6b6b" />`
+          : `<circle cx="${cx}" cy="${cy}" r="2.5" fill="${color}" opacity="0.55" />`;
+      }).join('');
+
+      // X-axis date labels
+      const labelIdx = [0, Math.floor((n - 1) / 2), n - 1].filter((v, i, a) => a.indexOf(v) === i);
+      const xLabels = labelIdx.map(i => {
+        const label = validPts[i]?.date || '';
+        return `<text x="${xAt(i)}" y="${height - 6}" text-anchor="middle" fill="#9aa6d1" font-size="11">${label}</text>`;
+      }).join('');
+
+      return `
+        <svg viewBox="0 0 ${width} ${height}" class="chart" preserveAspectRatio="none" role="img" aria-label="${ariaLabel || 'Six Sigma control chart'}">
+          ${grid.join('')}${refLines.join('')}${dataLine}${dots}${xLabels}
+        </svg>`;
+    }
+
     function buildKpiCard(label, value, sub, klass = '') {
       const card = el('div', 'card');
       card.innerHTML = `
@@ -333,6 +405,96 @@
       compareSection.appendChild(channelCard);
       compareSection.appendChild(regionCard);
       app.appendChild(compareSection);
+
+      // ── CSAT Six Sigma Control Charts ─────────────────────────────────────
+      if (data.csat_control_chart) {
+        const cc = data.csat_control_chart;
+        const ccPts = cc.daily;
+        const mrPts = ccPts.filter(p => p.moving_range != null);
+
+        const ccSection = el('section');
+        ccSection.style.marginBottom = '20px';
+
+        // Header card
+        const ccHeader = el('div', 'card');
+        ccHeader.style.marginBottom = '16px';
+        const cpkKlass = cc.cpk >= 1.33 ? 'good' : cc.cpk >= 1.0 ? 'warn' : 'bad';
+        const slKlass  = cc.sigma_level >= 4 ? 'good' : cc.sigma_level >= 3 ? 'warn' : 'bad';
+        ccHeader.innerHTML = `
+          <h2 class="section-title">CSAT Six Sigma Control Chart (I-MR)</h2>
+          <p class="subtle" style="margin-bottom:14px">
+            Individuals and Moving Range chart for daily CSAT. Control limits are computed using
+            Six Sigma constants d₂&nbsp;=&nbsp;1.128 and D₄&nbsp;=&nbsp;3.267 (subgroup&nbsp;n&nbsp;=&nbsp;2).
+            LSL&nbsp;=&nbsp;${cc.lsl}&nbsp;%, USL&nbsp;=&nbsp;${cc.usl}&nbsp;%.
+            Red&nbsp;dots indicate out-of-control points.
+          </p>
+          <div style="display:flex;flex-wrap:wrap;gap:24px;font-size:14px">
+            <div><span class="subtle">Centre line (CL)</span><br><strong>${fmt2.format(cc.center_line)} %</strong></div>
+            <div><span class="subtle">UCL (I chart)</span><br><strong style="color:#ff6b6b">${fmt2.format(cc.ucl)} %</strong></div>
+            <div><span class="subtle">LCL (I chart)</span><br><strong style="color:#ff6b6b">${fmt2.format(cc.lcl)} %</strong></div>
+            <div><span class="subtle">σ̂ (estimated σ)</span><br><strong>${fmt2.format(cc.sigma_hat)}</strong></div>
+            <div><span class="subtle">MR̄</span><br><strong>${fmt2.format(cc.mr_bar)}</strong></div>
+            <div><span class="subtle">UCL (MR chart)</span><br><strong style="color:#ff6b6b">${fmt2.format(cc.ucl_mr)}</strong></div>
+            <div><span class="subtle">Cpk</span><br><strong class="${cpkKlass}">${fmt2.format(cc.cpk)}</strong></div>
+            <div><span class="subtle">Sigma level</span><br><strong class="${slKlass}">${fmt2.format(cc.sigma_level)} σ</strong></div>
+          </div>`;
+
+        // I chart + MR chart side by side
+        const ccCharts = el('div', 'grid-2');
+
+        const iCard = el('div', 'card');
+        iCard.innerHTML = `
+          <h2 class="section-title">Individuals Chart (I) — Daily CSAT</h2>
+          ${controlChart(ccPts, 'csat', 'i_out_of_control', cc.center_line, cc.ucl, cc.lcl, '#7aa2ff', 'Individuals control chart for CSAT')}
+          <div class="legend">
+            <span style="color:#7aa2ff">CSAT (daily avg)</span>
+            <span style="color:#2cc38a">Centre line&nbsp;${fmt2.format(cc.center_line)}</span>
+            <span style="color:#ff6b6b">UCL&nbsp;${fmt2.format(cc.ucl)} / LCL&nbsp;${fmt2.format(cc.lcl)}</span>
+            <span style="color:#ff6b6b">● Out-of-control</span>
+          </div>`;
+
+        const mrCard = el('div', 'card');
+        mrCard.innerHTML = `
+          <h2 class="section-title">Moving Range Chart (MR)</h2>
+          ${controlChart(mrPts, 'moving_range', 'mr_out_of_control', cc.mr_bar, cc.ucl_mr, 0, '#f0b34a', 'Moving Range control chart for CSAT')}
+          <div class="legend">
+            <span style="color:#f0b34a">Moving range</span>
+            <span style="color:#2cc38a">MR̄&nbsp;${fmt2.format(cc.mr_bar)}</span>
+            <span style="color:#ff6b6b">UCL&nbsp;${fmt2.format(cc.ucl_mr)}</span>
+            <span style="color:#ff6b6b">● Out-of-control</span>
+          </div>`;
+
+        ccCharts.appendChild(iCard);
+        ccCharts.appendChild(mrCard);
+
+        // Violations / Western Electric rules
+        const wecCard = el('div', 'card');
+        wecCard.style.marginTop = '16px';
+        const wecWrap = el('div', 'alerts');
+        if (!cc.violations.length) {
+          wecWrap.appendChild(el('div', 'item',
+            '<strong>No Western Electric rule violations detected</strong>' +
+            '<div class="subtle">All data points are within statistical control for Rule 1 (3σ), Rule 2 (run of 8), and Rule 3 (trend of 6).</div>'));
+        } else {
+          cc.violations.forEach(v => {
+            const box = el('div', 'item');
+            box.innerHTML = `
+              <div class="badge bad">${v.rule}</div>
+              <strong>Out-of-control signal</strong>
+              <div class="subtle">${v.description}</div>
+              <div class="subtle" style="margin-top:4px;font-size:12px">Dates: ${v.dates.slice(0, 5).join(', ')}${v.dates.length > 5 ? ` + ${v.dates.length - 5} more` : ''}</div>`;
+            wecWrap.appendChild(box);
+          });
+        }
+        wecCard.innerHTML = '<h2 class="section-title">Western Electric Rule Violations</h2>';
+        wecCard.appendChild(wecWrap);
+
+        ccSection.appendChild(ccHeader);
+        ccSection.appendChild(ccCharts);
+        ccSection.appendChild(wecCard);
+        app.appendChild(ccSection);
+      }
+      // ─────────────────────────────────────────────────────────────────────
 
       const insights = el('section', 'grid-2');
       const hypotheses = el('div', 'card');

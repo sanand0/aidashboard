@@ -31,6 +31,13 @@ class ChannelConfig:
     breach_sensitivity: float
 
 
+# Six Sigma I-MR control chart constants (subgroup size n=2)
+_D2 = 1.128   # d2 constant — converts MR̄ to σ̂
+_D4 = 3.267   # D4 constant — UCL factor for MR chart
+_D3 = 0.0     # D3 constant — LCL factor for MR chart (= 0 for n=2)
+_CSAT_LSL = 75.0   # Lower Specification Limit for CSAT (minimum acceptable daily average)
+_CSAT_USL = 100.0  # Upper Specification Limit for CSAT
+
 REGIONS = [
     RegionConfig("North America", 155, 0.98, 1.08),
     RegionConfig("EMEA", 128, 0.96, 1.10),
@@ -71,6 +78,128 @@ def weighted_avg(items: list[tuple[float, float]]) -> float:
     if total_weight == 0:
         return 0.0
     return sum(value * weight for value, weight in items) / total_weight
+
+
+def compute_csat_control_chart(daily: list[dict]) -> dict:
+    """Compute a Six Sigma I-MR control chart for daily CSAT.
+
+    Uses the standard constants for subgroup size n=2:
+      sigma_hat  = MR_bar / d2  (d2 = 1.128)
+      UCL        = x_bar + 3 * sigma_hat
+      LCL        = x_bar - 3 * sigma_hat  (floored at 0)
+      UCL_MR     = D4 * MR_bar            (D4 = 3.267)
+      LCL_MR     = 0
+
+    Western Electric rules checked:
+      Rule 1 — one point beyond 3σ control limits
+      Rule 2 — eight consecutive points on the same side of the centre line
+      Rule 3 — six consecutive points steadily increasing or decreasing
+    """
+    csat_values = [day["csat"] for day in daily]
+    dates = [day["date"] for day in daily]
+    n = len(csat_values)
+
+    center_line = mean(csat_values)
+
+    # Moving range: MR_i = |x_i - x_{i-1}|, first point has no MR
+    moving_ranges: list[float | None] = [None] + [
+        abs(csat_values[i] - csat_values[i - 1]) for i in range(1, n)
+    ]
+    valid_mrs = [mr for mr in moving_ranges if mr is not None]
+    mr_bar = mean(valid_mrs) if valid_mrs else 0.0
+
+    sigma_hat = mr_bar / _D2 if _D2 else 0.0
+    ucl = center_line + 3 * sigma_hat
+    lcl = max(center_line - 3 * sigma_hat, 0.0)
+    ucl_mr = _D4 * mr_bar
+    lcl_mr = _D3 * mr_bar  # always 0 for n=2
+
+    # Process capability
+    if sigma_hat > 0:
+        cpu = ((_CSAT_USL - center_line) / (3 * sigma_hat))
+        cpl = ((center_line - _CSAT_LSL) / (3 * sigma_hat))
+        cpk = min(cpu, cpl)
+        sigma_level = (center_line - _CSAT_LSL) / sigma_hat
+    else:
+        cpk = 0.0
+        sigma_level = 0.0
+
+    # Western Electric rule violations
+    rule1_dates = [
+        dates[i]
+        for i in range(n)
+        if csat_values[i] > ucl or csat_values[i] < lcl
+    ]
+
+    rule2_dates = []
+    for i in range(7, n):
+        window = csat_values[i - 7 : i + 1]
+        if all(v > center_line for v in window) or all(v < center_line for v in window):
+            rule2_dates.append(dates[i])
+
+    rule3_dates = []
+    for i in range(5, n):
+        window = csat_values[i - 5 : i + 1]
+        if all(window[j] < window[j + 1] for j in range(5)) or all(
+            window[j] > window[j + 1] for j in range(5)
+        ):
+            rule3_dates.append(dates[i])
+
+    violations = []
+    if rule1_dates:
+        violations.append({
+            "rule": "Rule 1: Beyond 3σ",
+            "dates": rule1_dates,
+            "description": (
+                f"{len(rule1_dates)} point(s) outside the 3-sigma control limits — "
+                "potential special-cause variation."
+            ),
+        })
+    if rule2_dates:
+        violations.append({
+            "rule": "Rule 2: Run of 8",
+            "dates": rule2_dates,
+            "description": (
+                f"{len(rule2_dates)} run(s) of 8 consecutive points on the same side "
+                "of the centre line — possible process shift."
+            ),
+        })
+    if rule3_dates:
+        violations.append({
+            "rule": "Rule 3: Trend of 6",
+            "dates": rule3_dates,
+            "description": (
+                f"{len(rule3_dates)} trend(s) of 6 consecutive points steadily "
+                "increasing or decreasing — sustained drift detected."
+            ),
+        })
+
+    chart_daily = []
+    for i, day in enumerate(daily):
+        mr_val = moving_ranges[i]
+        chart_daily.append({
+            "date": day["date"],
+            "csat": day["csat"],
+            "moving_range": round2(mr_val) if mr_val is not None else None,
+            "i_out_of_control": csat_values[i] > ucl or csat_values[i] < lcl,
+            "mr_out_of_control": mr_val is not None and mr_val > ucl_mr,
+        })
+
+    return {
+        "lsl": _CSAT_LSL,
+        "usl": _CSAT_USL,
+        "center_line": round2(center_line),
+        "ucl": round2(ucl),
+        "lcl": round2(lcl),
+        "sigma_hat": round2(sigma_hat),
+        "mr_bar": round2(mr_bar),
+        "ucl_mr": round2(ucl_mr),
+        "lcl_mr": round2(lcl_mr),
+        "cpk": round2(cpk),
+        "sigma_level": round2(sigma_level),
+        "violations": violations,
+        "daily": chart_daily,
+    }
 
 
 def generate(seed: int, days: int) -> dict:
@@ -334,6 +463,8 @@ def generate(seed: int, days: int) -> dict:
         },
     ]
 
+    csat_control_chart = compute_csat_control_chart(daily)
+
     return {
         "metadata": {
             "title": "Support Operations Health",
@@ -367,6 +498,7 @@ def generate(seed: int, days: int) -> dict:
             "Chat performs best on both speed and satisfaction, while email is the main drag on service quality.",
             "The operating model looks slightly under-staffed around weekends, especially in APAC.",
         ],
+        "csat_control_chart": csat_control_chart,
     }
 
 
