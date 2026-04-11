@@ -24,6 +24,7 @@ The dashboard reads `site/data/dashboard.json` and renders:
 - channel and region comparisons
 - hypothesis callouts
 - alert panels
+- **CSAT Six Sigma I-MR control charts** — Individuals chart with UCL/LCL (3σ limits), Moving Range chart, process capability (Cpk, sigma level), and Western Electric rule violations (Rules 1, 2, 3)
 
 ## Simplest setup steps
 
